@@ -1,0 +1,294 @@
+\documentclass{article}
+\usepackage{graphicx} 
+\usepackage{url}
+\usepackage{amsmath}
+
+
+\title{\vspace{-4cm}Stochastic Simulation Group Project 2025}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+While stochastic simulation is hard to define, it is in essence the method by which
+we use models of a stochastic nature to solve for a given parameter. 
+These parameters are commonly stochastic in the sense of being random 
+and unpredictable. However, they may also be deterministic, yet of complex enough nature
+that a simulated stochastic model is preferred over analytical or numerical approaches.
+\\
+In this chapter we delve into how stochastic simulation is used to efficiently model
+light particles in computational graphics, a process known as path tracing.
+\\
+If we model our system as a 3D Cartesian coordinate space with a hemispherical 
+global light source at constant $z$, where light interacts with diffuse surfaces 
+represented by vectors in the space. 
+Then if we want to create an image we need the intensity of light 
+$L_{i}(\vec{x},\vec{\omega}_i)$,
+at position $\vec{x}$, in all possible directions $\vec{\omega_{i}}$.
+\\
+If we focus on just a single direction we can intuit this as the total intensity of all 
+light paths from the source that enter our virtual eye from that direction. If we 
+then consider each path will have bounces $n$ and at each bounce will reflect 
+with some distribution $f_{r}(\vec{x}_{n-1},\vec{x}_{n},\vec{x}_{n+1})$,
+where $\vec{x}_{n}$ is the position light hits a surface at bounce $n$. And 
+then at bounce $n$, the amount of light that reaches point $\vec{x_{n}}$
+from point $\vec{x}_{n-1}$ is the geometry term $G(\vec{x}_{n-1},\vec{x}_n)$.
+\\
+Then we can evaluate the intensity of the path, from direction $\vec{\omega_{i}}$
+at position $\vec{x_{n}}$ and after $n$ bounces as
+\begin{align}
+    L_n(\vec{x}, \vec{\omega}) = 
+    &\int_A \cdots \int_A L_e(\vec{x}_0, \vec{x}_1) 
+    G(\vec{x}_0, \vec{x}_1) f_r(\vec{x}_0, \vec{x}_1, 
+    \vec{x}_2) G(\vec{x}_1, \vec{x}_2) \cdots \\
+    &G(\vec{x}_{n-1}, \vec{x}_n) f_r(\vec{x}_{n-1}, \vec{x}_n, \vec{x}_{n+1}) \notag
+    \, dA_0 \, dA_1 \, \cdots \, dA_n
+\end{align}
+Then consider that this is only for a single path, we then have to take the sum of 
+all possible paths
+\begin{align}
+    L(\vec{x},\vec{\omega}) = \sum_{n=0}^{\infty}L_n(\vec{x},\vec{\omega}).
+\end{align}
+And thus we have an infinite sum of $2n$ dimensionality integrals.
+While this equation might seem impossible to solve, we will see in this chapter how
+stochastic simulation allows us to relatively simply evaluate this integral to a high
+precision. \cite{KajiyaJamesT.1986Tre} 
+
+\section{Generating Random Numbers}
+In any simulation study, the first step in producing a random variable with our desired 
+distribution, is producing a sequence of random numbers.
+While there are many definitions of randomness that change with the application or 
+philosophy.
+In simulation theory we define randomness as events which are non-deterministic 
+and also follow a known distribution \cite{shiryaev2016probability}. 
+Although, knowing the distribution doesn't seem random at first glance. 
+But much like how a fair coin follow a $X \sim \text{Bin}(\frac{1}{2})$ distribution
+yet has a random chance of landing on heads or tails. Randomness does not assume we 
+cannot make predictions about a large sample of events.
+
+\subsection{True Random Numbers}
+One subset of random numbers are true random numbers, these are what first come to 
+mind at the mention of randomness, and are in every essence truly non-deterministic.
+Ideally, all random number generators (RNG) would produce such stochastic numbers, 
+however most of these process measure naturally entropic phenomena and are thus
+slow and unsuited to most computer programs.\\
+One such example would be to measure the time $s_1,s_2,\dots,$ between events of atomic decay,
+and let 
+\begin{align}
+ X =
+    \begin{cases} 
+      1 & \text{if } x_{2i-1}<x_{2i} \\ 
+      0 & \text{otherwise}
+    \end{cases}
+\end{align}
+Then $X$ follows a 
+\begin{align*}
+    X \sim \text{Bern}(0.5).
+\end{align*}
+distribution.
+Alternatively, we can use the HAVEGE ("HArdware Volatile Entropy Gathering and Expansion”)
+\label{point: HAVEGE} system,
+that produces random numbers based off your hardwares internal state \cite{gentle2003random}. 
+\\
+However, this has no known distribution and is also relatively slow and thus not useful for sampling.
+Because of these many limitations on true random numbers we usually opt to
+use deterministic algorithms known as a pseudo-random number generators (PNG).
+
+\subsection{Pseudo Random Numbers}
+Pseudo-random numbers are completely deterministic and with the correct 'seed' $x_0$
+can be completely predicted. This makes them unsuitable for any application that requires 
+high security such as cryptography. However, in simulation we only need the appears that they
+are random and independent and this can be achieved with a suitably good generator.
+
+\subsubsection{Linear Congruential Generators}
+By creating a true random seed $x_0$ through HAVEGE from \ref{point: HAVEGE},
+we can use the algorithm 
+\begin{align} 
+    \label{eq: Linear Congruential Generator}
+    x_{i} \equiv (ax_{i-1} + c) \pmod{m},\quad\text{    with    }\quad0\leq x_{i}<m
+\end{align}
+to recursively produce a 'Lehmer' sequence of uniformly distributed numbers. 
+We call $a$ the multiplier, $c$ the increment and $m$ the modulus of the generator.
+Often, $c$ is taken to be $0$ for simplicity, giving us a multiplicative congruential 
+generator.
+Although the sequence is clearly deterministic, if we scale it onto the interval 
+$(0,1)$ by dividing through by $m$. It can be seen in fig() to be a random variable
+$X\sim(0,1)$. \cite{alma9954732790001381}
+\\
+\\
+For every generator, there will exist applications in which the determinism of the generator
+is exploited to introduce bias.
+Hence, for a given generator we must choose parameters that maintain the perceived independence
+and identical distribution of our random variable. 
+
+\subsubsection{Period}
+It can be seen from Eq(\ref{eq: Linear Congruential Generator}), that the
+Lehemer sequence will repeat with period no greater than $m$. An important parameter
+to account for is the periocidy of your PNG. It is generally accepted, that for linear methods
+an upper bound for the sample size is $n = \sqrt{k}$, where $k$ is the period of the PNG \cite{HELLEKALEK1998485}.
+\\
+It turn out that the maximum period can be solved using the Euler totient function $\phi(m)$.
+Additionally, it can be seen from Eq(\ref{eq: Linear Congruential Generator}),
+the period  of a multiplicative generator with multiplier $a$, is the smallest value
+of $k$ such that 
+\begin{align}
+    &x_{i+k}=x_{i} \notag
+    \intertext{where} 
+    &x_{i+k}\equiv x_{i} \pmod{m}\notag
+    \intertext{solving recursively we have} 
+    &x_{i+k}=a^{k}x_{i} \pmod{m}.\notag
+    \intertext{Thus} &a^{k}\equiv 1\text{ mod }m
+\end{align}
+where $a$ is the 'primitive root modulo $m$', when $k=\phi(m)$.
+In most applications, a period of at least the order of $10^{9}$ is required. \cite{gentle2003random}
+
+\subsubsection{Independence through Dimensions}
+Additionally, we must ensure independence is maintained through the dimensions of our applicaiton.
+In our example problem of path tracing, it can be seen that for any given path with $n$ bounces,
+we have dimensionality of $2n$. However, it can be seen in fig() that for a generator with
+parameters that maximise the period, the distribution of $d$-tuples $x_n=(x_{n},x_{n+1}\dots x_{n+d})$
+with dimensions $d$ does not necessarily have a good lattice structure. This suggests a correlation in 
+higher dimensions, and will thus introduce bias in applications such as our example.
+To prevent this emperical testing such as the spectral test should be conducted to 
+ensure that there is independence within the required dimensions. \cite{HELLEKALEK1998485}
+
+\section{Generating Random Variables}
+Often a chosen generator will not match our desired distribution and thus we need
+methods to simulate random variables with different distributions. Many such methods
+exist but one particularly suited for when using a linear generator
+is the inverse transformation method.  
+
+\subsection{The Inverse Transformation Method}
+Let U be a uniform (0,1) random variable. If we define the random variable X by
+\begin{align}
+	X=F^{-1}(U)
+\end{align}
+where $F$ is a c.d.f  and 
+\begin{align}
+F^{-1}(u)=\text{inf}\{x:F(x)\geq u\},\quad\quad 0\leq u\leq 1.
+\end{align}
+Then $X$ has c.d.f $F$.
+\\
+This means for our random variable from any uniform generator we can then simulate a distribution that has a known probability function. 
+\\
+This works since $F(x)$ is a c.d.f and hence monotone, and so 
+\begin{align}
+F^{-1}(U)\leq a &\iff U\leq F(a).\notag
+\intertext{Thus we have}
+F_{X}(a)&=P\{X\leq a\} \\ \notag
+&=P\{F^{-1}(U)\leq a\} \\ \notag
+&=P\{U\leq F(a)\}\\ \notag
+&=F(a) \quad \cite{ross2007introduction}. 
+\end{align}
+It should be noted that the theory for these equations assumes the randomness of 
+any distribution function. Hence, when using PNGs we should take care to ensure that
+the algorithm isn't exploiting biases in our generator \cite{alma9946168020001381}.
+
+\subsection{Good-fit Tests}
+
+A recommend empirical testing approach is the two-level procedure. First, 
+you produce a random sample of length $n$ from your desired generator with 
+known distribution. Then you use a goodness-of-fit test to compare your sample 
+distribution to the true distribution. While this can't confirm independence it 
+does allow for confirmation of an accurate sample distribution \cite{HELLEKALEK1998485}.
+
+One such common statistical test is the Kolmogorov-Smirnov test. 
+Kolmogorov and Smirnov used the Glivenko-Cantelli theorem, 
+which states that for a random sample $X_{1},\dots,X_{n}$ assumed to be 
+from some unknown c.d.f $F_{X}(x)$, and our  'sample cumulative distributive 
+function' $F_{N}(x)$, defined as 
+\begin{align}
+F_{N}(x)=\frac{1}{N}(\text{number of $X_{i}$ less than or equal to $x$}) ~.
+\end{align}
+Then
+\begin{align}
+\lim_{ N \to \infty } P\left[\sup_{x} |F_{N}(x)-F_{X}(x)|>\epsilon\right]  = 0 ~,
+\end{align}
+thus for large N the deviation $|F_{N}(x)-F_{X}(x)|$ denoted simply as $D_{N}$ between the "true" function $F_{X}(x)$ and our sample c.d.f $F_{N}(x)$ is small for all $x$.
+Using this quality Kolmogorov and Smirnov proved that for any continuous distribution $F_{X}(x_{0})$, 
+\begin{align}
+\lim_{ N \to \infty } P(\sqrt{ N }~D_{N}\leq x)=H(x)
+\end{align}
+where $H(x)$ is a known function.
+This remarkably allows any distribution of large enough sample size 
+(at least 35) to be compared to $H(x)$, thus the K-S test is considered 
+non-parametric with a broad application. \cite{alma9954732790001381}
+
+\section{Monte Carlo Methods}
+At its core Monte Carlo simulation involves using random numbers to evaluate mathematical expressions. While evaluating random and non deterministic models and functions may seem like the obvious utilisation. It is less apparent that even deterministic equations can be solved by simulating random variables and evaluating through Monte Carlo methods. Naturally, if such equations can be solved analytically or numerically then that should be the preferred approach. However, when dealing with complex, multidimensional or vast systems of equations. It should be noted however, that in most Monte Carlo methods the CLT is used to justify our estimator converging on to the true expectation. As such the standard error of our estimator decreases at $O\left( 1/\sqrt{ n } \right)$. Hence, we will have diminishing returns as our experiment size increases. Fortunately, there are variance reduction methods that will be mentioned later to reduce the variance and keep down computing costs. \cite{alma9946168020001381} 
+\\
+For Monte Carlo methods to work we must be able to produce samples of a random variable such that some function of that random variable is a parameter in the problem to be solved. 
+
+\subsection{Evaluating an Integral}
+
+Given a parameter $\theta$, where
+\begin{align}
+\theta =\int_{b}^{a} g(x)~dx .
+\end{align}
+Then for random variable $X$ with p.d.f. $f_{X}(x)>0$
+\begin{align}
+\theta &=\int_{b}^{a}\frac{g(x)}{f_{X}(x)}f_{X}(x)~dx\\
+&=E \left[ \frac{g(X)}{f_{X}(X)} \right]
+\end{align}
+It becomes clear we can approximate this through random sampling.
+In the simple case where $X\sim U(0,1)$, we have
+\begin{align}
+E \left[ \,\, g(x) \,\, \right] = \frac{\theta}{b-a}
+\end{align}
+thus
+\begin{align}
+\theta=(b-a)E[\,\,g(X)\,\,]
+\end{align}
+Clearly this is a simple problem of estimating the mean for $E(g(X))$. 
+Hence, and unbiased estimator for $\theta$ is its sample mean 
+\begin{align}
+\hat{\theta}=(b-a)\frac{1}{N}\sum_{i=1}^{N}g(X_{i}).
+\end{align}
+With variance $E(\hat{\theta}^{2})-[E(\hat{\theta})]^{2}$, evaluating to 
+\begin{align}
+var \, \hat{\theta} = \frac{(b-a)}{N}\int_{b}^{a} \left( g^{2}(x) ~dx~-~\int_{b}^{a}g(t) ~ dt \right)
+\end{align}
+\\
+This method is known as the Sample-Mean or the "crude" Monte Carlo method. \cite{alma9954732790001381} 
+
+\subsection{Variance Reduction}
+Variance reduction is the method by which we use known information about our simulation to reduce the variance and hence improve efficiency.
+While in many applications the complexity introduced in using variance reduction does not justify the cost benefit. It still plays an important role in models where strict time optimisation is necessary or where high precision is required without unrealistically high samples. \cite{gentle2003random}
+\subsubsection{Importance Sampling}
+Returning to our previous parameter $\theta$, it can be shown that while a uniform distribution for $f_{X}(x)$ may return the true value as $N\to \infty$, it is by no means the most effiecient method for all functions $g(x)$.
+\\
+We have that for parameter $\theta$, the unbiased estimator $\hat{\theta}$ is defined as 
+\begin{align}
+\hat{\theta}=\frac{1}{N}\sum_{i=1}^{N} \frac{g(x_{i})}{f_{X}(x_{i})}.
+\end{align}
+It is apparent that $\hat{\theta}$ is un-bias regardless of the $f_{X}(x)$ we chose to sample with. Additionally, our choice of $f_{X}(x)$ weights our sample in the direction of the highest probability and hence by an intelligent choice of $f_{X}(x)$ we can reduce our variance. 
+\\
+Looking at the variance of $\hat{\theta}$, we have
+\begin{align}
+var\,\hat{\theta} &= \frac{1}{N} \,\,\, var\left( \frac{g(X)}{f_{X}(X)} \right)\\
+\\
+&=\frac{1}{N} \left[ \,\,\, E \left( \frac{g^{2}(X)}{f_{X}^{2}(X)} \right) - E\left( \frac{g(X)}{f_{X}(X)} \right)^{2} \,\,\, \right]
+\end{align}
+In importance sampling we aim to choose $f_{X}(x)$ such that the variance is minimised.
+Due to the fact that 
+\begin{align}
+E\left( \frac{g(X)}{f_{X}(X)} \right)^{2}  = \,\, \theta
+\end{align}
+This term can be ignored, and hence to minimise the variance we can use Jensen's inequality to show 
+\begin{align}
+E\left( \frac{g^{2}(X)}{f_{X}^{2}(X)} \right) &\geq E\left( \frac{|g(X)|}{f_{X}(X)} \right)^{2} \\
+\\
+&=\left( \int_{D} |f(x)|\,dx \right)^{2}
+\end{align} 
+The optimal p.d.f. is thus obviously 
+\begin{align}
+f_{X}(x) = \frac{|\,g(x)\,|}{\int_{D}\,|\,g(x)\,|\,dx}.
+\end{align}
+While this might seem like we solved the problem of error, evaluating $\int_{D}\,|\,g(x)\,|\,dx$ is practically no different from solving for $\theta$, at which point one would question the point of this simulation. And hence instead we aim for $f_{X}(x)$ with shape similar to $|\,g(x)\,|$. That is $|\,g(x)\,|/f_{X}(x)$ is close to constant. \cite{gentle2003random}
+
+
+
+\bibliographystyle{plain}
+\bibliography{references} 
+\end{document}

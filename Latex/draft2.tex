@@ -1,0 +1,264 @@
+\documentclass{article}
+\usepackage{graphicx} 
+\usepackage{url}
+\usepackage{amsmath}
+
+
+\title{\vspace{-4cm}Stochastic Simulation Group Project 2025}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+While stochastic simulation as a whole is hard to define,
+the goal in any simulation study is to estimate ($\hat{\theta}_i$), one or more parameters 
+\begin{align}
+    \theta_i = E\phi(X) \label{eq: expectation of loss function}
+\end{align} 
+where function $\phi(X)$ encodes the quanitity or relationship we aim to evaluate 
+for some domain $X$. \cite{alma9946168020001381}.
+\\
+In a statistical application, $X$ is commonly a random variable and $\phi(X)$ will be
+some statistical model we want to evaluate.
+However, $X$ may also be deterministic, but $\phi$ is of a complex enough nature
+that a simulated stochastic model is preferred over analytical or numerical approaches.
+\\ \\
+In this chapter we delve into how stochastic simulation is used to efficiently model
+light particles in computational graphics, a process known as path tracing.
+
+\section{Path Tracing Model}
+Fig() shows how we model our system as a 3D Cartesian coordinate space, with a 
+hemispherical global light source with intensity $L_e$. As light moves through the 
+space with position $\vec{x}$, it interacts with diffuse surfaces 
+represented by an area $A_n$ at bounce $n$.
+Each recursive interaction results in a bounce at position $\vec{x}_n$, 
+where the light is reflected toward $\vec{x}_{n+1}$, with a probability distribution function 
+$f_{r}(\vec{x}_{n-1},\vec{x}_{n},\vec{x}_{n+1})$. The intensity is scaled by
+$0$ if the path is impossible, and $1$ if it's possible, calculated by the
+geometry factor $G(\vec{x}_{n-1},\vec{x}_n)$.\\
+Thus after bounce $n$, the light will leave with intensity 
+\begin{align}
+    L_n(\vec{x}_n,\vec{x}_{n+1}) = 
+    \int_{A} L_{n-1}(\vec{x}_{n-1},\vec{x}_n)G(\vec{x}_{n-1},\vec{x}_n)
+    f_r(\vec{x}_{n-1},\vec{x}_n,\vec{x}_{n+1})\,dA_n
+\end{align}
+representing all the possible paths that could contribute to $L_n$.
+\\
+\\
+Now suppose you want to calculate what a virtual pinhole camera would see inside this model.
+If each pixel has direction from the pinhole $\vec{\omega}_i$, at position $\vec{x}_i$.
+Then by summing the intensity $L_{n}$,
+of all the possible paths of light that have direction $\vec{\omega}_i$ towards
+position $\vec{x}_i$ after $n$ bounces.
+\begin{align}
+    L_i(\vec{x},\vec{\omega}_i) = \sum_{n=0}^{\infty}L_n(\vec{x},\vec{\omega}_i).
+\end{align}
+we get the brightness of pixel $i$. Do this for every pixel and you have an image.
+\\
+However, to solve this we have an infinite sum of a recursive integral with dimensionality $2n$.
+At first glance this equation might seem impossible to solve. However, we will see in this chapter how
+stochastic simulation allows us to easily evaluate this integral to a high
+precision. \cite{KajiyaJamesT.1986Tre} 
+
+\section{Generating Random Numbers}
+In any simulation study, the first step in producing a random variable with our desired 
+distribution, is producing a sequence of random numbers.
+While there are many definitions of randomness that change with the application or 
+philosophy.
+In simulation theory we define randomness as events which are non-deterministic 
+and also follow a known distribution \cite{shiryaev2016probability}. 
+Although, knowing the distribution doesn't seem random at first glance. 
+But much like how a fair coin follow a $X \sim \text{Bin}(\frac{1}{2})$ distribution
+yet has a random chance of landing on heads or tails. Randomness does not assume we 
+cannot make predictions about a large sample of events.
+
+\subsection{True Random Numbers}
+One subset of random numbers are true random numbers, these are what first come to 
+mind at the mention of randomness, and are in every essence truly non-deterministic.
+Ideally, all random number generators (RNG) would produce such stochastic numbers, 
+however most of these process measure naturally entropic phenomena and are thus
+slow and unsuited to most computer programs.\\
+One such example would be to measure the time $s_1,s_2,\dots,$ between events of atomic decay,
+and let 
+\begin{align}
+ X =
+    \begin{cases} 
+      1 & \text{if } x_{2i-1}<x_{2i} \\ 
+      0 & \text{otherwise}
+    \end{cases}
+\end{align}
+Then $X$ follows a 
+\begin{align*}
+    X \sim \text{Bern}(0.5).
+\end{align*}
+distribution.
+Alternatively, we can use the HAVEGE ("HArdware Volatile Entropy Gathering and Expansion”)
+\label{point: HAVEGE} system,
+that produces random numbers based off your hardwares internal state \cite{gentle2003random}. 
+\\
+However, this has no known distribution and is also relatively slow and thus not useful for sampling.
+Because of these many limitations on true random numbers we usually opt to
+use deterministic algorithms known as a pseudo-random number generators (PNG).
+
+\subsection{Pseudo Random Numbers}
+Pseudo-random numbers are completely deterministic and with the correct 'seed' $x_0$
+can be completely predicted. This makes them unsuitable for any application that requires 
+high security such as cryptography. However, in simulation we only need the appears that they
+are random and independent and this can be achieved with a suitably good generator.
+
+\subsubsection{Linear Congruential Generators}
+By creating a true random seed $x_0$ through HAVEGE from \ref{point: HAVEGE},
+we can use the algorithm 
+\begin{align} 
+    \label{eq: Linear Congruential Generator}
+    x_{i} \equiv (ax_{i-1} + c) \pmod{m},\quad\text{    with    }\quad0\leq x_{i}<m
+\end{align}
+to recursively produce a 'Lehmer' sequence of uniformly distributed numbers. 
+We call $a$ the multiplier, $c$ the increment and $m$ the modulus of the generator.
+Often, $c$ is taken to be $0$ for simplicity, giving us a multiplicative congruential 
+generator.
+Although the sequence is clearly deterministic, if we scale it onto the interval 
+$(0,1)$ by dividing through by $m$. It can be seen in fig() to be a random variable
+$X\sim(0,1)$. \cite{alma9954732790001381}
+\\
+\\
+For every generator, there will exist applications in which the determinism of the generator
+is exploited to introduce bias.
+Hence, for a given generator we must choose parameters that maintain the perceived independence
+and identical distribution of our random variable. 
+
+\subsubsection{Period}
+It can be seen from Eq(\ref{eq: Linear Congruential Generator}), that the
+Lehemer sequence will repeat with period no greater than $m$. An important parameter
+to account for is the periocidy of your PNG. It is generally accepted, that for linear methods
+an upper bound for the sample size is $n = \sqrt{k}$, where $k$ is the period of the PNG \cite{HELLEKALEK1998485}.
+\\
+It turn out that the maximum period can be solved using the Euler totient function $\phi(m)$.
+Additionally, it can be seen from Eq(\ref{eq: Linear Congruential Generator}),
+the period  of a multiplicative generator with multiplier $a$, is the smallest value
+of $k$ such that 
+\begin{align}
+    &x_{i+k}=x_{i} \notag
+    \intertext{where} 
+    &x_{i+k}\equiv x_{i} \pmod{m}\notag
+    \intertext{solving recursively we have} 
+    &x_{i+k}=a^{k}x_{i} \pmod{m}.\notag
+    \intertext{Thus} &a^{k}\equiv 1\text{ mod }m
+\end{align}
+where $a$ is the 'primitive root modulo $m$', when $k=\phi(m)$.
+In most applications, a period of at least the order of $10^{9}$ is required. \cite{gentle2003random}
+
+\subsubsection{Independence through Dimensions}
+Additionally, we must ensure independence is maintained through the dimensions of our applicaiton.
+In our example problem of path tracing, it can be seen that for any given path with $n$ bounces,
+we have dimensionality of $2n$. However, it can be seen in fig() that for a generator with
+parameters that maximise the period, the distribution of $d$-tuples $x_n=(x_{n},x_{n+1}\dots x_{n+d})$
+with dimensions $d$ does not necessarily have a good lattice structure. This suggests a correlation in 
+higher dimensions, and will thus introduce bias in applications such as our example.
+To prevent this emperical testing such as the spectral test should be conducted to 
+ensure that there is independence within the required dimensions. \cite{HELLEKALEK1998485}
+
+\section{Generating Random Variables}
+Often a chosen generator will not match our desired distribution and thus we need
+methods to simulate random variables with different distributions. Many such methods
+exist but one particularly suited for when using a linear generator
+is the inverse transformation method.  
+
+\subsection{The Inverse Transformation Method}
+Let U be a uniform (0,1) random variable. If we define the random variable X by
+\begin{align}
+	X=F^{-1}(U)
+\end{align}
+where $F$ is a c.d.f  and 
+\begin{align}
+F^{-1}(u)=\text{inf}\{x:F(x)\geq u\},\quad\quad 0\leq u\leq 1.
+\end{align}
+Then $X$ has c.d.f $F$.
+\\
+This means for our random variable from any uniform generator we can then simulate a distribution that has a known probability function. 
+\\
+This works since $F(x)$ is a c.d.f and hence monotone, and so 
+\begin{align}
+F^{-1}(U)\leq a &\iff U\leq F(a).\notag
+\intertext{Thus we have}
+F_{X}(a)&=P\{X\leq a\} \\ \notag
+&=P\{F^{-1}(U)\leq a\} \\ \notag
+&=P\{U\leq F(a)\}\\ \notag
+&=F(a) \quad \cite{ross2007introduction}. 
+\end{align}
+It should be noted that the theory for these equations assumes the randomness of 
+any distribution function. Hence, when using PNGs we should take care to ensure that
+the algorithm isn't exploiting biases in our generator \cite{alma9946168020001381}.
+
+\subsection{Good-fit Tests}
+
+While a good-fit emperical test cannot test for independence, if our sample can pass
+this test for a given distribution $f_X$. It can thereafter be considered a random variable 
+$X$ with distribution funciton $f_X$. \cite{HELLEKALEK1998485}.  
+\\
+The Glivenko-Cantelli theorem which states that,
+for a random sample  $X_{1},\dots,X_{n}$ from some unknown c.d.f. $F_X(x)$,
+and our 'sample c.d.f.' $F_N(x)$, defined as 
+\begin{align}
+F_{N}(x)=\frac{1}{N}(\text{number of $X_{i}$ less than or equal to $x$}) ~,
+\end{align}
+then
+\begin{align}
+\lim_{ N \to \infty } P\left[\sup_{x} |F_{N}(x)-F_{X}(x)|>\epsilon\right]  = 0 ~.
+\end{align}
+Thus showing for large N the maximum deviation
+$\sup_{x} |F_{N}(x)-F_{X}(x)|$,
+denoted simply as $D_N$, between the 'true' function $F_X$ and our sample c.d.f. $F_N$ is small 
+for all $x$. 
+Using this quality Kolmogrov proved and Smirnov later formalised that for any continuous
+distribution $F_X$
+\begin{align}
+\lim_{ N \to \infty } P(\sqrt{ N }~D_{N}\leq x)=H(x)
+\end{align}
+where $H(x)$ is a tabulated function. 
+\\
+Thus remarkably this Kolmogrov-Smirnov test allows a sample of any distribution and any 
+sufficiently large sample size (at least 35) to be evaluated against $H(x)$. Such 
+a test is known as non-parametric and has a broad application. \cite{alma9954732790001381}
+
+\section{Monte Carlo Integration}
+From Eq.(\ref{eq: expectation of loss function}) it is not immediately evident 
+how a stochastic simulation can be used to evaluate an integral $\theta$ on the domain $D$
+\begin{align}
+    \theta &= \int_{D} g(x) \, dx. \notag \\
+    \intertext{However, if we transform it to be an expected value for some random variable} \notag 
+    &= \int_{D} \frac{g(x)}{f_X(x)}f_X(x) \, dx \quad\quad \text{    s.t.    } f_X(x) >0 \text{    when    } g(x)\neq0, \notag\\ 
+    \intertext{where $f_X$ is the p.d.f. of $X$ and so,} \notag \\
+    &=E \left[ \frac{g(X)}{f_X(X)} \right].
+\end{align}
+It can be seen that this is in the form of Eq.(\ref{eq: expectation of loss function}),
+where $\theta$ is the parameter we are trying to solve for. 
+Hence, we have now setup this deterministic integral as a stochastic model.
+Thus, in the same way we would for a stochastic model, we can solve this through random sampling. \\
+In the simplest case where $D = [a,b]$ and $X\sim U(a,b)$ we have 
+\begin{align}
+    \theta = (b-a)E[g(X)] 
+\end{align}
+Taking the sample mean as an unbiased estimator
+\begin{align}
+    \hat{\theta} = (b-a) \frac{1}{N} \sum_{i=1}^{N}g(X_i)
+\end{align}
+$\theta$ can be solved for $N \rightarrow \infty$.
+
+\section{Importance Sampling}
+Importance sampling is a method of variance reduction that reduces the burden for 
+
+
+
+
+
+
+
+
+
+
+
+\bibliographystyle{plain}
+\bibliography{references} 
+\end{document}
